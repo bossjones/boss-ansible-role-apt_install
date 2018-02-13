@@ -1,2 +1,63 @@
 ---
-# tasks file for boss-ansible-role-apt_install
+
+# FIXME: Enable these later
+# - name: Pre hooks
+#   include: '{{ lookup("task_src", "apt_install/pre_main.yml") }}'
+
+- name: Install requested APT packages
+  apt:
+    name: '{{ item }}'
+    state: '{{ boss__apt_install__state }}'
+    install_recommends: '{{ boss__apt_install__recommends|bool }}'
+    update_cache: '{{ boss__apt_install__update_cache|bool }}'
+    cache_valid_time: '{{ boss__apt_install__cache_valid_time }}'
+  with_flattened: '{{ lookup("template",
+                      "lookup/boss__apt_install__all_packages.j2",
+                      convert_data=False) | from_json }}'
+  when: boss__apt_install__enabled|bool
+
+- name: Configure alternative symlinks
+  alternatives:
+    name:     '{{ item.name }}'
+    path:     '{{ item.path }}'
+    link:     '{{ item.link | d(omit) }}'
+    priority: '{{ item.priority | d(omit) }}'
+  with_flattened:
+    - '{{ boss__apt_install__alternatives }}'
+    - '{{ boss__apt_install__group_alternatives }}'
+    - '{{ boss__apt_install__host_alternatives }}'
+  when: item.name|d() and item.path|d()
+
+- name: Configure automatic alternatives
+  command: update-alternatives --auto {{ item.name }}
+  register: boss__apt_install__register_alternatives
+  with_flattened:
+    - '{{ boss__apt_install__alternatives }}'
+    - '{{ boss__apt_install__group_alternatives }}'
+    - '{{ boss__apt_install__host_alternatives }}'
+  when: item.name|d() and not item.path|d()
+  changed_when: boss__apt_install__register_alternatives.stdout != ''
+
+- name: Make sure that Ansible fact directory exists
+  file:
+    path: '/etc/ansible/facts.d'
+    state: 'directory'
+    owner: 'root'
+    group: 'root'
+    mode: '0755'
+  when: boss__apt_install__enabled|bool
+
+- name: Save local Ansible facts
+  template:
+    src: 'etc/ansible/facts.d/apt_install.fact.j2'
+    dest: '/etc/ansible/facts.d/apt_install.fact'
+    owner: 'root'
+    group: 'root'
+    mode: '0644'
+  when: boss__apt_install__enabled|bool
+
+# FIXME: Enable these later
+# - name: Post hooks
+#   include: '{{ lookup("task_src", "apt_install/post_main.yml") }}'
+
+
